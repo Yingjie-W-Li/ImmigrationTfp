@@ -90,9 +90,7 @@ function Residual(p::AuxParameters; df::DataFrame = Wide)
     L = (λ.^(1 - ρ) * (αᶠ * F).^ρ + (1 .- λ).^(1 - ρ) * (αᵈ * D).^ρ).^(1/ρ)
     Y = df[:, :Y]
 
-    
-
-    return log.(Y) - (Inter .+ SFE * δ + TFE * ξ + θ * log.(K) + (1 - θ) * log.(Z .* L)), Z
+    return log.(Y) - (Inter .+ SFE * δ + TFE * ξ + θ * log.(K) + (1 - θ) * log.(Z .* L)), Z, L
     
 end
 

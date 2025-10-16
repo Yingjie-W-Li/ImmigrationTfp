@@ -118,6 +118,7 @@ sol = solve(prob, Optimization.LBFGS())
 # Pack the solution and calculate TFP
 p = AuxParameters(sol[1], sol[2], sol[3], sol[4], sol[5], vcat(0., sol[6: 5 + N - 1]), vcat(0., sol[5 + N : 5 + N - 1 + T - 1]), sol[end - 1], sol[end]);
 Wide[:, :Z] = Residual(p; df = Wide)[2]
+Wide[:, :L] = Residual(p; df = Wide)[3]
 
 Other = @chain DataFrame(load(joinpath(data, "StateAnalysisFile.dta"))) begin
     @mutate(                                                                                                                    # Setting data types

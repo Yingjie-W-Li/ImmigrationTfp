@@ -6,9 +6,11 @@ import delimited "${Data}/StateAnalysisFileTfp.csv", clear case(preserve)
 loc samp inrange(year, 1994, 2021)
 loc sampno21 inrange(year, 1994, 2020)
 
-loc graphs "ZResponse_Iv1990 ZResponse_Iv1990_F"
+loc graphs "Wage00Response_Iv1990 Wage01Response_Iv1990 Wage00Response_Iv1990_F Wage01Response_Iv1990_F"
+
 /*************************************************
-Some Cleaning
+Some Cleaning - 
+Identical to the cleaning part in the Z regs code
 *************************************************/
 
 * Change statefip to string of length 2
@@ -135,11 +137,12 @@ egen Bartik_1990 = rowtotal(Bartik_1990_*), missing // Pre-period shares
 egen Bartik_L1 = rowtotal(Bartik_L1_*), missing     // Lagged shares
 egen Bartik_L2 = rowtotal(Bartik_L2_*), missing
 
-* Calculate TFP Growth rates
+* Calculate task aggregate growth rates
 forvalues h = -3/9 { // LHS variables
     if `h' < 0 loc name = "L" + string(abs(`h'))
     if `h' >= 0 loc name = "F" + string(abs(`h'))
-    bys statefip (year): gen Zg_`name' = Z[_n + `h']/Z[_n - 1] - 1
+    bys statefip (year): gen W01g_`name' = Wage01[_n + `h']/Wage01[_n - 1] - 1 // NOTE: These were already deflated when I estimated TFP
+    bys statefip (year): gen W00g_`name' = Wage00[_n + `h']/Wage00[_n - 1] - 1
 }
 
 encode statefip, gen(state)
@@ -154,9 +157,13 @@ frame create Estimates
 frame Estimates {
 
     gen h = .
-    gen BetaIv1990 = .
-    gen SeIv1990 = .
-    gen FIv1990 = .
+    gen BetaForeignIv1990 = .
+    gen SeForeignIv1990 = .
+    gen FForeignIv1990 = .
+
+    gen BetaDomesticIv1990 = .
+    gen SeDomesticIv1990 = .
+    gen FDomesticIv1990 = .
 
 }
 
@@ -169,15 +176,27 @@ forvalues h = -3/9 {
         if `h' < 0 loc horizon = "L" + string(abs(`h'))
         if `h' >= 0 loc horizon = "F" + string(abs(`h'))
 
-        qui ivreghdfe Zg_`horizon' (fg = Bartik_1990) [pw = emp] if `samp', absorb(state year) vce(robust)
+        * Foreign born
+        qui ivreghdfe W01g_`horizon' (fg = Bartik_1990) [pw = emp] if `samp', absorb(state year) vce(robust)
 
         * Record the results in the Estimates frame
         frame Estimates {
             insobs 1
             replace h = `h' if _n == _N
-            replace BetaIv1990 = _b[fg] if _n == _N
-            replace SeIv1990 = _se[fg] if _n == _N
-            replace FIv1990 = `e(widstat)' if _n == _N
+            replace BetaForeignIv1990 = _b[fg] if _n == _N
+            replace SeForeignIv1990 = _se[fg] if _n == _N
+            replace FForeignIv1990 = `e(widstat)' if _n == _N
+        }
+
+        * Domestic
+        qui ivreghdfe W00g_`horizon' (fg = Bartik_1990) [pw = emp] if `samp', absorb(state year) vce(robust)
+
+        frame Estimates {
+            insobs 1
+            replace h = `h' if _n == _N
+            replace BetaDomesticIv1990 = _b[fg] if _n == _N
+            replace SeDomesticIv1990 = _se[fg] if _n == _N
+            replace FDomesticIv1990 = `e(widstat)' if _n == _N
         }
     
     }
@@ -187,14 +206,18 @@ forvalues h = -3/9 {
         frame Estimates {
             insobs 1
             replace h = `h' if _n == _N
-            replace BetaIv1990 = 0 if _n == _N
-            replace SeIv1990 = . if _n == _N
-            replace FIv1990 = . if _n == _N
+            
+            replace BetaForeignIv1990 = 0 if _n == _N
+            replace SeForeignIv1990 = . if _n == _N
+            replace FForeignIv1990 = . if _n == _N
+
+            replace BetaDomesticIv1990 = 0 if _n == _N
+            replace SeDomesticIv1990 = . if _n == _N
+            replace FDomesticIv1990 = . if _n == _N
         }
     }
     
 }
-
 
 /*************************************************
 GRAPHS
@@ -204,19 +227,28 @@ GRAPHS
 frame Estimates {
 
     * Confidence intervals - 95%
-    gen BetaIv1990_upper = BetaIv1990 + 1.96 * SeIv1990
-    gen BetaIv1990_lower = BetaIv1990 - 1.96 * SeIv1990
+    gen BetaForeignIv1990_upper = BetaForeignIv1990 + 1.96 * SeForeignIv1990
+    gen BetaForeignIv1990_lower = BetaForeignIv1990 - 1.96 * SeForeignIv1990
 
-    tw connected BetaIv1990 h if inrange(h,-3, 9), ms(oh) mc("0 147 245") xlab(-3(1)9, nogrid) sort || rcap BetaIv1990_upper BetaIv1990_lower h, lcolor("0 147 245") ylab(, nogrid) ///
-    ytitle("{&eta}{subscript:Z}") xtitle("Horizon") legend(off) yline(0, lc(black%50) lp(solid)) name(ZResponse_Iv1990)
+    gen BetaDomesticIv1990_upper = BetaDomesticIv1990 + 1.96 * SeDomesticIv1990
+    gen BetaDomesticIv1990_lower = BetaDomesticIv1990 - 1.96 * SeDomesticIv1990
+
+    tw connected BetaForeignIv1990 h if inrange(h,-3, 9), ms(oh) mc("0 147 245") xlab(-3(1)9, nogrid) sort || rcap BetaForeignIv1990_upper BetaForeignIv1990_lower h, lcolor("0 147 245") ylab(, nogrid) ///
+    ytitle("{&epsilon}{subscript:F}") xtitle("Horizon") legend(off) yline(0, lc(black%50) lp(solid)) name(Wage01Response_Iv1990)
+
+    tw connected BetaDomesticIv1990 h if inrange(h,-3, 9), ms(oh) mc("0 147 245") xlab(-3(1)9, nogrid) sort || rcap BetaDomesticIv1990_upper BetaDomesticIv1990_lower h, lcolor("0 147 245") ylab(, nogrid) ///
+    ytitle("{&epsilon}{subscript:D}") xtitle("Horizon") legend(off) yline(0, lc(black%50) lp(solid)) name(Wage00Response_Iv1990)
 
 }
 
 * F Stats of IRF for pre-period
 frame Estimates {
 
-    graph bar FIv1990 if h > -1, over(h) bar(1, color("0 147 245") fcolor("0 147 245")) ylab(0(20)180, nogrid labsize(small)) ///
-    yline(10,lc(black%70) lp(dash)) legend(off) b1title("Horizon") ytitle("First Stage F") name(ZResponse_Iv1990_F)
+    graph bar FForeignIv1990 if h > -1, over(h) bar(1, color("0 147 245") fcolor("0 147 245")) ylab(0(20)180, nogrid labsize(small)) ///
+    yline(10,lc(black%70) lp(dash)) legend(off) b1title("Horizon") ytitle("First Stage F") name(Wage01Response_Iv1990_F)
+
+    graph bar FDomesticIv1990 if h > -1, over(h) bar(1, color("0 147 245") fcolor("0 147 245")) ylab(0(20)180, nogrid labsize(small)) ///
+    yline(10,lc(black%70) lp(dash)) legend(off) b1title("Horizon") ytitle("First Stage F") name(Wage00Response_Iv1990_F)
     
 }
 
